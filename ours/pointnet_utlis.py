@@ -70,7 +70,7 @@ def farthest_point_sample(xyz, npoint):
 def square_distance(src, dst):
     """
     Calculate Euclid distance between each two points.
-
+    ^T means transpose
     src^T * dst = xn * xm + yn * ym + zn * zm；
     sum(src^2, dim=-1) = xn*xn + yn*yn + zn*zn;
     sum(dst^2, dim=-1) = xm*xm + ym*ym + zm*zm;
@@ -83,6 +83,8 @@ def square_distance(src, dst):
     Output:
         dist: per-point square distance, [B, N, M]
     """
+    # src: all the points,
+    # dst: centroids
     B, N, _ = src.shape
     _, M, _ = dst.shape
     dist = -2 * torch.matmul(src, dst.permute(0, 2, 1))
@@ -103,10 +105,14 @@ def query_ball_point(radius, nsample, xyz, new_xyz):
     device = xyz.device
     B, N, C = xyz.shape
     _, S, _ = new_xyz.shape
+    # group_idx initilized as 0,1,2,...,N-1
     group_idx = torch.arange(N, dtype=torch.long).to(device).view(1, 1, N).repeat([B, S, 1])
     sqrdists = square_distance(new_xyz, xyz)
+    # those far away from the centrod are set to be N
     group_idx[sqrdists > radius ** 2] = N
+    # sort by idx, select the first nsample number of points
     group_idx = group_idx.sort(dim=-1)[0][:, :, :nsample]
+    # repeat the first group member to reach nsample number of points
     group_first = group_idx[:, :, 0].view(B, S, 1).repeat([1, 1, nsample])
     mask = group_idx == N
     group_idx[mask] = group_first[mask]
@@ -139,13 +145,13 @@ def sample_and_group(npoint, radius, nsample, xyz, points, returnfps=False):
     torch.cuda.empty_cache()
 
     # grouped_xyz shape: [B, npoint, nsample, 3]
-    grouped_xyz = index_points(xyz, idx) # 
+    grouped_xyz = index_points(xyz, idx) 
     torch.cuda.empty_cache()
+    # grouped_xyz_norm: grouped_xyz in local coordinate
     grouped_xyz_norm = grouped_xyz - new_xyz.view(B, S, 1, C)
     torch.cuda.empty_cache()
-
-	return TODO
-
+    
+    # points is other features(like color etc.), we only have xyz so points is None
     if points is not None:
         grouped_points = index_points(points, idx)
         new_points = torch.cat([grouped_xyz_norm, grouped_points], dim=-1) # [B, npoint, nsample, C+D]
@@ -157,3 +163,51 @@ def sample_and_group(npoint, radius, nsample, xyz, points, returnfps=False):
     else:
         return new_xyz, new_points
 
+class PointNetSetAbstraction(nn.Module):
+    def __init__(self, npoint, radius, nsample, in_channel, mlp, group_all):
+        super(PointNetSetAbstraction, self).__init__()
+        self.npoint = npoint
+        self.radius = radius
+        self.nsample = nsample
+        self.mlp_convs = nn.ModuleList()
+        self.mlp_bns = nn.ModuleList()
+        last_channel = in_channel
+        for out_channel in mlp:
+            self.mlp_convs.append(nn.Conv2d(last_channel, out_channel, 1))
+            self.mlp_bns.append(nn.BatchNorm2d(out_channel))
+            last_channel = out_channel
+        self.group_all = group_all
+
+    def forward(self, xyz, points):
+        """
+        Input:
+            xyz: input points position data, [B, C, N]
+            points: input points data, [B, D, N]
+        Return:
+            new_xyz: sampled points position data, [B, C, S]
+            new_points_concat: sample points feature data, [B, D', S]
+
+            S(npoint): number of centroids for every batch
+        """
+        xyz = xyz.permute(0, 2, 1)
+        if points is not None:
+            points = points.permute(0, 2, 1)
+
+        if self.group_all:
+            new_xyz, new_points = sample_and_group_all(xyz, points)
+        else:
+            # new_xyz, new_points, grouped_xyz, fps_idx = sample_and_group(self.npoint, self.radius, self.nsample, xyz, points, returnfps = True)
+            new_xyz, new_points = sample_and_group(self.npoint, self.radius, self.nsample, xyz, points)
+
+        # new_xyz: sampled points position data, [B, npoint, C]
+        # new_points: sampled points data, [B, npoint, nsample, C+D]
+        new_points = new_points.permute(0, 3, 2, 1) # [B, C+D, nsample,npoint]
+        for i, conv in enumerate(self.mlp_convs):
+            bn = self.mlp_bns[i]
+            new_points =  F.relu(bn(conv(new_points)))
+
+        # new_points: [B, 1024, npoint]
+        new_points = torch.max(new_points, 2)[0]
+        # new_xyz: [B, 3, npoint]
+        new_xyz = new_xyz.permute(0, 2, 1)
+        return new_xyz, new_points
