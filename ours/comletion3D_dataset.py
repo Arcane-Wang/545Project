@@ -17,7 +17,6 @@ class Completion3DDataset(Dataset):
         #self.cat = {}
         self.allFilenames = []
         self.path = []
-        self.data = []
         
         # define the categories
         self.cat = {
@@ -79,8 +78,8 @@ class Completion3DDataset(Dataset):
                     # partial point cloud
                     fpos = h5py.File(os.path.join(self.path[0], name), 'r')
                     pos = torch.tensor(fpos['data'], dtype=torch.float32)
-                    self.cache.append((pos, self.classes[cat]))          
-                               
+                    self.cache.append(pos)          
+                    
         
         # get the file
         def process_names(split_in_loop):
