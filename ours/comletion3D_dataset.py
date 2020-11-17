@@ -4,6 +4,7 @@ import warnings
 import numpy as np
 import torch
 from torch.utils.data import Dataset
+import random
 
 warnings.filterwarnings('ignore')
 
@@ -55,6 +56,9 @@ class Completion3DDataset(Dataset):
                 
                 fpos = None
                 pos = None
+                fy = None
+                y = None
+                
                 # if the input split is 'train', we only use the ground truth for training
                 if splitInGet == 'train':
                     # complete point cloud
@@ -62,16 +66,20 @@ class Completion3DDataset(Dataset):
                     pos = torch.tensor(fpos['data'], dtype=torch.float32)
                     self.cache.append((pos, self.classes[cat]))
                 
-                fy = None
-                y = None
-                if splitInGet == 'val':
+                elif splitInGet == 'val':
                     # partial point cloud
                     fpos = h5py.File(os.path.join(self.path[0], name), 'r')
                     pos = torch.tensor(fpos['data'], dtype=torch.float32)
                     # complete point cloud
                     fy = h5py.File(os.path.join(self.path[1], name), 'r')
                     y = torch.tensor(fy['data'], dtype=torch.float32)
-                    self.cache.append((y, self.classes[cat], pos))            
+                    self.cache.append((self.classes[cat], pos, y))    
+
+                elif splitInGet == 'test':
+                    # partial point cloud
+                    fpos = h5py.File(os.path.join(self.path[0], name), 'r')
+                    pos = torch.tensor(fpos['data'], dtype=torch.float32)
+                    self.cache.append((pos, self.classes[cat]))          
                                
         
         # get the file
@@ -81,22 +89,28 @@ class Completion3DDataset(Dataset):
                 self.path.append(os.path.join(self.root, 'train', 'gt'))
                 self.allFilenames = getFileNames(self.path[0])
 
-            # get the val data gt
-            if split_in_loop == 'val':
+            # get the val data
+            elif split_in_loop == 'val':
                 # get the val data partial
                 self.path.append(os.path.join(self.root, 'val', 'partial'))
-#                 self.allFilenames.append(getFileNames(path[0]))
+                # self.allFilenames.append(getFileNames(path[0]))
                 self.allFilenames = getFileNames(self.path[0])
                 # for val need to do twice in the following part
                 self.path.append(os.path.join(self.root, 'val', 'gt'))
-#                 self.allFilenames.append(getFileNames(self.path[1]))
+                # self.allFilenames.append(getFileNames(self.path[1]))
             
+            # get the test data
+            elif split_in_loop == 'test':
+                self.path.append(os.path.join(self.root, 'test', 'partial'))
+                self.allFilenames = getFileNames(self.path[0])
+
             getData(self.allFilenames, split_in_loop)
+            # random cache
+            random.shuffle(self.cache)
             
         process_names(split)
 
     def __getitem__(self, index):
-        print("self.data len: ", len(self.data))
         return self.cache[index]
         
     def __len__(self):
