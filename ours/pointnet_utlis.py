@@ -49,7 +49,7 @@ def farthest_point_sample(xyz, npoint):
     # 0,1,2 ... B
     batch_indices = torch.arange(B, dtype=torch.long).to(device)
  
-    # npoint loops, find npoint centorids for every batch
+    # npoint loops, find npoint centorids in the batch
     for i in range(npoint):
         centroids[:, i] = farthest
         # the coordinate of the newest centroid
@@ -121,13 +121,13 @@ def query_ball_point(radius, nsample, xyz, new_xyz):
 def sample_and_group(npoint, radius, nsample, xyz, points, returnfps=False):
     """
     Input:
-        npoint: number of centroids for every batch
+        npoint: number of centroids of this batch
         radius: local region radius
         nsample: max sample number in local region
         xyz: input points position data, [B, N, 3]
         points: input points data, [B, N, D]
     Return:
-        new_xyz: sampled points position data, [B, npoint, nsample, 3] ?????
+        new_xyz: sampled points position data, [B, npoint, nsample, 3]
         new_points: sampled points data, [B, npoint, nsample, 3+D]
     """
     B, N, C = xyz.shape
@@ -161,6 +161,8 @@ def sample_and_group(npoint, radius, nsample, xyz, points, returnfps=False):
     if returnfps:
         return new_xyz, new_points, grouped_xyz, fps_idx
     else:
+        # new_xyz contains the coordinates of the centroids
+        # new_points is the coordinates of the group members in local coordinate
         return new_xyz, new_points
 
 class PointNetSetAbstraction(nn.Module):
@@ -196,17 +198,17 @@ class PointNetSetAbstraction(nn.Module):
         if self.group_all:
             new_xyz, new_points = sample_and_group_all(xyz, points)
         else:
-            # new_xyz, new_points, grouped_xyz, fps_idx = sample_and_group(self.npoint, self.radius, self.nsample, xyz, points, returnfps = True)
             new_xyz, new_points = sample_and_group(self.npoint, self.radius, self.nsample, xyz, points)
 
         # new_xyz: sampled points position data, [B, npoint, C]
         # new_points: sampled points data, [B, npoint, nsample, C+D]
+
         new_points = new_points.permute(0, 3, 2, 1) # [B, C+D, nsample,npoint]
         for i, conv in enumerate(self.mlp_convs):
             bn = self.mlp_bns[i]
             new_points =  F.relu(bn(conv(new_points)))
 
-        # new_points: [B, 1024, npoint]
+        # new_points: [B, 512, npoint]
         new_points = torch.max(new_points, 2)[0]
         # new_xyz: [B, 3, npoint]
         new_xyz = new_xyz.permute(0, 2, 1)

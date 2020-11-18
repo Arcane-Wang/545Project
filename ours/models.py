@@ -14,7 +14,6 @@ class Model(torch.nn.Module):
         num_vote_train: int, the number of votes during training
         num_contrib_vote_train: int, the maximum number of selected votes during training
         num_vote_test: int, the number of votes during test
-
     """
 
     def __init__(
@@ -33,9 +32,8 @@ class Model(torch.nn.Module):
 	  self.decoder = FoldingBasedDecoder(bottleneck)
 
     def forward(self, x=None, pos=None):
-        #x = self.transformer(pos)
         # extract feature for each sub point clouds
-        mean, std, x_idx, y_idx = self.encoder(x, pos, batch)
+        mean, std = self.encoder(x, pos, batch)
 
         # select contribution features
         if self.training:
@@ -67,10 +65,12 @@ class Encoder(torch.nn.Module):
         self.nsample = 128
         self.in_channel = 3
         # 3 -> 64
-        self.sa_3_64 = PointNetSetAbstraction(self.npoint, radius, 
-                                                self.nsample, self.in_channel,
-                                                mlp = [64], group_all = False)
+        # self.sa_3_64 = PointNetSetAbstraction(self.npoint, radius, 
+        #                                         self.nsample, self.in_channel,
+        #                                         mlp = [64], group_all = False)
         # 64+3 -> 64 -> 128 -> 512
+
+        # 3 -> 64 -> 128 -> 512
         self.sa_module = PointNetSetAbstraction(self.npoint, radius, 
                                                 self.nsample, self.in_channel,
                                                 mlp = [64, 128, 512], group_all = False)
@@ -78,19 +78,20 @@ class Encoder(torch.nn.Module):
     
     def forward(self, x, points):
         # points could be None
+
         # new_points: [B, 512, npoint]
         # new_xyz: [B, 3, npoint],coordinate of the centroids
-        new_xyz_1, new_points_1 = self.sa_3_64(x, points)
-        new_xyz, new_points = self.sa_module(new_xyz_1, new_points_1)
-
-        # add controid coordinate after xyz
+        new_xyz, new_points = self.sa_module(x, points)
         new_xyz = new_xyz.permute(0, 2, 1)
         new_points = new_points.permute(0, 2, 1)
         # new_points: [B, npoint, 512]
         # new_xyz: [B, npoint, 3]
+
         # after cat: [B, npoint, 512+3]
         x = self.mlp(torch.cat([new_points,new_xyz], dim=-1))
         mean, logvar = torch.chunk(x, 2, dim=-1)
+        logvar = torch.clamp(logvar, min=-100, max=100)
+        # std must be positive
         std = torch.exp(0.5*logvar)
         return mean, std
 
