@@ -21,22 +21,22 @@ class Model(torch.nn.Module):
 		num_pts,num_pts_observed,
         num_vote_train, num_contrib_vote_train,
         num_vote_test):
-      super(Module,self).__init__()
-      self.num_vote_train = num_vote_train
-      self.num_contrib_vote_train = num_contrib_vote_train
-      self.num_vote_test = num_vote_test
-      self.bottleneck = bottleneck
+        super(Module,self).__init__()
+        self.num_vote_train = num_vote_train
+        self.num_contrib_vote_train = num_contrib_vote_train
+        self.num_vote_test = num_vote_test
+        self.bottleneck = bottleneck
 
-	  self.encoder = Encoder(radius, bottleneck, self.num_vote_train, self.num_vote_test)
-	  self.latent_module = LatentModule(is_vote = True)
-	  self.decoder = FoldingBasedDecoder(bottleneck)
+	self.encoder = Encoder(radius, bottleneck, self.num_vote_train, self.num_vote_test)
+	self.latent_module = LatentModule(is_vote = True)
+	self.decoder = FoldingBasedDecoder(bottleneck)
 
     def forward(self, x=None, pos=None):
         # extract feature for each sub point clouds
         mean, std = self.encoder(x, pos, batch)
 
         # select contribution features
-        if self.training:
+        if self.training: # Boolean inherited from nn.Module representing whether this module is in training or evaluation mode
             contrib_mean, contrib_std = \
                 self.feature_selection(mean, std, self.num_vote_train, self.num_contrib_vote_train)
         else:
