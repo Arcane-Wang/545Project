@@ -4,7 +4,7 @@ import sys
 import torch.nn.functional as F
 from .model_utils import *
 
-class Model(torch.nn.Module):
+class get_model(torch.nn.Module):
     """
     Point clouds completion model.
 
@@ -231,3 +231,31 @@ class FoldingNetDecFold2(torch.nn.Module):
         # x = self.conv3(x)
         return x
 
+class get_loss(torch.nn.Module):
+    def __init__(self):
+        super(get_loss, self).__init__()
+    
+    def forward(self, x, y):
+        """
+        Compute chamfer distance for x and y. Note there are multiple version of chamfer
+        distance. The implemented chamfer distance is defined in:
+            https://arxiv.org/pdf/1612.00603.pdf.
+        It finds the nearest neighbor in the other set and computes their squared
+        distances which are summed over both target and ground-truth sets.
+        Arguments:
+            x: [bsize, m, 3]
+            y: [bsize, n, 3]
+        Returns:
+            dis: [bsize]
+        """
+        # x: [bsize,1, m, 3]
+        x = x.unsqueeze(1)
+        # y: [bsize, n,1, 3]
+        y = y.unsqueeze(2)
+        # x,y: [bsize,n, m, 3]
+        diff = (x - y).norm(dim=-1)
+        # diff = (x - y).pow(2).sum(dim=-1)
+        dis1 = diff.min(dim=1)[0].mean(dim=1)
+        dis2 = diff.min(dim=2)[0].mean(dim=1)
+        dis = dis1 + dis2
+        return dis

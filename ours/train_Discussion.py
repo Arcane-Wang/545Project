@@ -24,40 +24,91 @@ sys.path.append(os.path.join(ROOT_DIR, 'models'))
 
 def parse_args():  # Set up parameters to input
     '''PARAMETERS'''
+    # parser = argparse.ArgumentParser('PointNet')
+    # parser.add_argument('--batch_size', type=int, default=24, help='batch size in training [default: 24]')
+    # parser.add_argument('--model', default='pointnet_cls', help='model name [default: pointnet_cls]')
+    # parser.add_argument('--epoch',  default=200, type=int, help='number of epoch in training [default: 200]')
+    # parser.add_argument('--learning_rate', default=0.001, type=float, help='learning rate in training [default: 0.001]')
+    # parser.add_argument('--gpu', type=str, default='0', help='specify gpu device [default: 0]')
+    # parser.add_argument('--num_point', type=int, default=1024, help='Point Number [default: 1024]')
+    # parser.add_argument('--optimizer', type=str, default='Adam', help='optimizer for training [default: Adam]')
+    # parser.add_argument('--log_dir', type=str, default=None, help='experiment root')
+    # parser.add_argument('--decay_rate', type=float, default=1e-4, help='decay rate [default: 1e-4]')
+    # parser.add_argument('--normal', action='store_true', default=False, help='Whether to use normal information [default: False]')
+    # return parser.parse_args()
+
     parser = argparse.ArgumentParser('PointNet')
-    parser.add_argument('--batch_size', type=int, default=24, help='batch size in training [default: 24]')
-    parser.add_argument('--model', default='pointnet_cls', help='model name [default: pointnet_cls]')
-    parser.add_argument('--epoch',  default=200, type=int, help='number of epoch in training [default: 200]')
-    parser.add_argument('--learning_rate', default=0.001, type=float, help='learning rate in training [default: 0.001]')
-    parser.add_argument('--gpu', type=str, default='0', help='specify gpu device [default: 0]')
-    parser.add_argument('--num_point', type=int, default=1024, help='Point Number [default: 1024]')
-    parser.add_argument('--optimizer', type=str, default='Adam', help='optimizer for training [default: Adam]')
-    parser.add_argument('--log_dir', type=str, default=None, help='experiment root')
-    parser.add_argument('--decay_rate', type=float, default=1e-4, help='decay rate [default: 1e-4]')
-    parser.add_argument('--normal', action='store_true', default=False, help='Whether to use normal information [default: False]')
+    parser.add_argument("--model_name", default='model',
+                        help="model name")
+    parser.add_argument("--dataset", type=str, choices=['shapenet', 'modelnet', 'completion3D', 'scanobjectnn'],
+                        help="shapenet or modelnet or completion3D")
+    parser.add_argument("--categories", default='Chair',
+                        help="point clouds categories, string or [string]. For ShapeNet: Airplane, Bag, \
+                        Cap, Car, Chair, Earphone, Guitar, Knife, Lamp, Laptop, Motorbike, Mug, Pistol, \
+                        Rocket, Skateboard, Table; For Completion3D: plane;cabinet;car;chair;lamp;couch;table;watercraft")
+    parser.add_argument("--task", type=str, choices=['completion', 'classification', 'segmentation'],
+                        help=' '.join([
+                            'completion: point clouds completion',
+                            'classification: shape classification on ModelNet40',
+                            'segmentation: part segmentation on ShapeNet'
+                        ]))
+    parser.add_argument("--num_pts", type=int,
+                        help="the number of input points")
+    parser.add_argument("--num_pts_observed", type=int,
+                        help="the number of points in observed point clouds")  
+    parser.add_argument("--lr", type=float, default=0.0002,
+                        help="batch size")
+    parser.add_argument("--step_size", type=int, default=200,
+                        help="step size to reduce lr")
+    parser.add_argument("--max_epoch", type=int, default=500,
+                        help="max epoch to train")
+    parser.add_argument("--bsize", type=int, default=32,
+                        help="batch size")
+    parser.add_argument("--radius", type=float,
+                        help="radius for generating sub point clouds")
+    parser.add_argument("--bottleneck", type=int,
+                        help="the size of bottleneck")
+    parser.add_argument("--num_vote_train", type=int, default=64,
+                        help="the number of votes (sub point clouds) during training")
+    parser.add_argument("--num_contrib_vote_train", type=int, default=10,
+                        help="the maximum number of contribution votes during training")
+    parser.add_argument("--num_vote_test", type=int,
+                        help="the number of votes (sub point clouds) during test")
+    parser.add_argument("--is_vote", action='store_true',
+                        help="flag for computing latent feature by voting, otherwise max pooling")
+    parser.add_argument('--model', default='model', help='model name [default: pointnet_cls]')
     return parser.parse_args()
 
-def test(model, loader, num_class=40):
+def evaluation():
+
+    # sampling in the latent space to generate diverse prediction
+    latent = model.module.optimal_z[0, :].view(1, -1)
+    idx = np.random.choice(args.num_vote_test, 1, False)
+    random_latent = model.module.contrib_mean[0, idx, :].view(1, -1)
+    random_latent = (random_latent + latent) / 2
+    pred_diverse = model.module.generate_pc_from_latent(random_latent)
+
+    ## save as the format that visualizer needs
+    #
+    #
+    #
+
+def test_one_epoch(model, loader, num_class=40):
     mean_correct = []
     class_acc = np.zeros((num_class,3))
-    for j, data in tqdm(enumerate(loader), total=len(loader)):  # 进度显示
+    results = []
+    for j, data in tqdm(enumerate(loader), total=len(loader)):  
+        # target is the gt, points is the partial
         points, target = data
-        target = target[:, 0]
-        points = points.transpose(2, 1) #将数据集的第三轴和第二轴交换
         points, target = points.cuda(), target.cuda()
-        classifier = model.eval()
-        pred, _ = classifier(points)
-        pred_choice = pred.data.max(1)[1]
-        for cat in np.unique(target.cpu()):
-            classacc = pred_choice[target==cat].eq(target[target==cat].long().data).cpu().sum()
-            class_acc[cat,0]+= classacc.item()/float(points[target==cat].size()[0])
-            class_acc[cat,1]+=1
-        correct = pred_choice.eq(target.long().data).cpu().sum()
-        mean_correct.append(correct.item()/float(points.size()[0]))
-    class_acc[:,2] =  class_acc[:,0]/ class_acc[:,1]
-    class_acc = np.mean(class_acc[:,2])
-    instance_acc = np.mean(mean_correct)
-    return instance_acc, class_acc
+        model.eval()
+        pred = model(points)
+        results.append(chamfer_loss(pred, target.view(-1, args.num_pts, 3)))
+        results = torch.cat(results, dim=0).mean().item()
+        logger.add_scalar('test_chamfer_dist', results, epoch)
+        print('Epoch: {:03d}, Test Chamfer: {:.4f}'.format(epoch, results))
+        results = -results
+    return results
 
 
 def main(args):
@@ -86,6 +137,8 @@ def main(args):
 
     '''LOG'''
     args = parse_args()
+    assert args.dataset in ['completion3D']
+    assert args.task in ['completion']
     logger = logging.getLogger("Model")
     logger.setLevel(logging.INFO)
     formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -98,46 +151,54 @@ def main(args):
 
     '''DATA LOADING'''
     log_string('Load dataset ...')
-    DATA_PATH = '' # TO BE Modified
+    DATA_PATH = '' ############# TO BE Modified ###########
 
-    TRAIN_DATASET = ModelNetDataLoader(root=DATA_PATH, class_choice, split='train',
-                                                     )
-    TEST_DATASET = ModelNetDataLoader(root=DATA_PATH, class_choice, split='test',
-                                                    )
-    trainDataLoader = torch.utils.data.DataLoader(TRAIN_DATASET, batch_size=args.batch_size, shuffle=True, num_workers=4)
-    testDataLoader = torch.utils.data.DataLoader(TEST_DATASET, batch_size=args.batch_size, shuffle=False, num_workers=4)
+    TRAIN_DATASET = Completion3DDataset(root=DATA_PATH, class_choice=None, split='train')
+    trainDataLoader = torch.utils.data.DataLoader(TRAIN_DATASET, batch_size=args.bsize, shuffle=True, num_workers=8)
+
+    TEST_DATASET = Completion3DDataset(root=DATA_PATH, class_choice=None, split='test')
+    trainDataLoader = torch.utils.data.DataLoader(TEST_DATASET, batch_size=args.bsize, shuffle=True, num_workers=8)
 
     '''MODEL LOADING'''
-    num_class = 40
     MODEL = importlib.import_module(args.model)
-    shutil.copy('./models/%s.py' % args.model, str(experiment_dir))  #????
+    shutil.copy('./models/%s.py' % args.model, str(experiment_dir))  
     shutil.copy('./models/pointnet_util.py', str(experiment_dir))
 
-    classifier = MODEL.get_model(num_class,normal_channel=args.normal).cuda() ??
-    criterion = MODEL.get_loss().cuda()  #????
+    model = MODEL.get_model(
+        radius=args.radius,
+        bottleneck=args.bottleneck,
+        num_pts=args.num_pts,
+        num_pts_observed=args.num_pts_observed,
+        num_vote_train=args.num_vote_train,
+        num_contrib_vote_train=args.num_contrib_vote_train,
+        num_vote_test=args.num_vote_test,
+    ) 
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    model.to(device)
+    if torch.cuda.device_count() > 1:
+        print("Let's use", torch.cuda.device_count(), "GPUs!")
+    criterion = MODEL.get_loss().to(device)
 
     try:
-        checkpoint = torch.load(str(experiment_dir) + '/checkpoints/best_model.pth')  # .pth 从哪来的（try),Checkpoint 和 experiment 的区别？？
+        checkpoint = torch.load(str(experiment_dir) + '/checkpoints/best_model.pth')  
         start_epoch = checkpoint['epoch']
-        classifier.load_state_dict(checkpoint['model_state_dict'])
+        model.load_state_dict(checkpoint['model_state_dict'])
         log_string('Use pretrain model')
     except:
         log_string('No existing model, starting training from scratch...')
         start_epoch = 0
 
 
-    if args.optimizer == 'Adam':
-        optimizer = torch.optim.Adam(
-            classifier.parameters(),
-            lr=args.learning_rate,
-            betas=(0.9, 0.999),
-            eps=1e-08,
-            weight_decay=args.decay_rate
-        )
-    else:
-        optimizer = torch.optim.SGD(classifier.parameters(), lr=0.01, momentum=0.9)
+    
+    optimizer = torch.optim.Adam(
+        classifier.parameters(),
+        lr=args.learning_rate,
+        betas=(0.9, 0.999),
+        eps=1e-08,
+        weight_decay=args.decay_rate
+    )
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=args.step_size, gamma=0.2)
 
-    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.7)
     global_epoch = 0
     global_step = 0
     best_instance_acc = 0.0
@@ -152,31 +213,21 @@ def main(args):
         scheduler.step()
         for batch_id, data in tqdm(enumerate(trainDataLoader, 0), total=len(trainDataLoader), smoothing=0.9):
             points, target = data
-            points = points.data.numpy()
-            points = provider.random_point_dropout(points)
-            points[:,:, 0:3] = provider.random_scale_point_cloud(points[:,:, 0:3])
-            points[:,:, 0:3] = provider.shift_point_cloud(points[:,:, 0:3])
             points = torch.Tensor(points)
-            target = target[:, 0]
-
-            points = points.transpose(2, 1)
             points, target = points.cuda(), target.cuda()
             optimizer.zero_grad()
 
-            classifier = classifier.train()
-            pred, trans_feat = classifier(points)
-            loss = criterion(pred, target.long(), trans_feat)
-            pred_choice = pred.data.max(1)[1]
-            correct = pred_choice.eq(target.long().data).cpu().sum()
-            mean_correct.append(correct.item() / float(points.size()[0]))
+            model = model.train()
+            pred = model(points)
+            # compare the prediction and points(gt)
+            # TO DO : mean() ??? 
+            loss = criterion(pred.view(args.bsize, -1, 3), points.view(-1, args.num_pts, 3)).mean()
+            log_string('Train Current Accuracy: %f' % loss)
+
             loss.backward()
             optimizer.step()
             global_step += 1
-
-        train_instance_acc = np.mean(mean_correct)
-        log_string('Train Instance Accuracy: %f' % train_instance_acc)
-
-
+        ################# TODO call test_one_epoch to get the acc for val dataset###########
         with torch.no_grad():
             instance_acc, class_acc = test(classifier.eval(), testDataLoader)
 
