@@ -1,5 +1,5 @@
 #coding=gbk
-from Completion3D import Completion3DDataset
+from completion3D_dataset import Completion3DDataset
 import argparse
 import numpy as np
 import os
@@ -15,9 +15,9 @@ import shutil
 def main():
     '''DATA LOADING'''
     #log_string('Load dataset ...')
-    DATA_PATH = 'F:/EECS545 proj/shapenet' # TO BE Modified
+    DATA_PATH = '' # TO BE Modified
 
-    TRAIN_DATASET = Completion3DDataset(root=DATA_PATH, class_choice=None, split='train') #改成自己的 complition3D
+    TRAIN_DATASET = Completion3DDataset(root=DATA_PATH, class_choice=None, split='train')
     trainDataLoader = torch.utils.data.DataLoader(TRAIN_DATASET, batch_size=1, shuffle=True, num_workers=1)
     '''
     for batch_id, data in enumerate(trainDataLoader,0):
