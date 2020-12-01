@@ -114,7 +114,7 @@ def test_one_epoch(model, loader,criterion):
     logger.add_scalar('test_chamfer_dist', results, epoch)
     print('Epoch: {:03d}, Test Chamfer: {:.4f}'.format(epoch, results))
     results = -results
-    
+
     return results
 
 
@@ -239,27 +239,26 @@ def main(args):
         with torch.no_grad():
             acc = test_one_epoch(model.eval(), testDataLoader, criterion)
 
-            if (instance_acc >= best_instance_acc):
-                best_instance_acc = instance_acc
-                best_epoch = epoch + 1
+            log_string('Test Accuracy: %f'% (acc))
+            log_string('Best Accuracy: %f'% (best_acc))
 
-            if (class_acc >= best_class_acc):
-                best_class_acc = class_acc
-            log_string('Test Instance Accuracy: %f, Class Accuracy: %f'% (instance_acc, class_acc))
-            log_string('Best Instance Accuracy: %f, Class Accuracy: %f'% (best_instance_acc, best_class_acc))
+            if acc > best_acc:
+                # save model
+                torch.save(model.state_dict(), os.path.join(check_dir, 'model.pth'))
+                best_acc = acc
+            # if (instance_acc >= best_instance_acc):
+            #     logger.info('Save model...')
+            #     savepath = str(checkpoints_dir) + '/best_model.pth'
+            #     log_string('Saving at %s'% savepath)
+            #     state = {
+            #         'epoch': best_epoch,
+            #         'instance_acc': instance_acc,
+            #         'class_acc': class_acc,
+            #         'model_state_dict': classifier.state_dict(),
+            #         'optimizer_state_dict': optimizer.state_dict(),
+            #     }
+            #     torch.save(state, savepath)
 
-            if (instance_acc >= best_instance_acc):
-                logger.info('Save model...')
-                savepath = str(checkpoints_dir) + '/best_model.pth'
-                log_string('Saving at %s'% savepath)
-                state = {
-                    'epoch': best_epoch,
-                    'instance_acc': instance_acc,
-                    'class_acc': class_acc,
-                    'model_state_dict': classifier.state_dict(),
-                    'optimizer_state_dict': optimizer.state_dict(),
-                }
-                torch.save(state, savepath)
             global_epoch += 1
 
     logger.info('End of training...')
