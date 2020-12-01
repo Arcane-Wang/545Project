@@ -16,6 +16,7 @@ import sys
 import provider
 import importlib
 import shutil
+from models import *
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = BASE_DIR
@@ -79,23 +80,24 @@ def parse_args():  # Set up parameters to input
     parser.add_argument('--model', default='model', help='model name [default: pointnet_cls]')
     return parser.parse_args()
 
-def evaluation():
+# ## test dataset
+# def evaluation():
 
-    # sampling in the latent space to generate diverse prediction
-    latent = model.module.optimal_z[0, :].view(1, -1)
-    idx = np.random.choice(args.num_vote_test, 1, False)
-    random_latent = model.module.contrib_mean[0, idx, :].view(1, -1)
-    random_latent = (random_latent + latent) / 2
-    pred_diverse = model.module.generate_pc_from_latent(random_latent)
+#     # sampling in the latent space to generate diverse prediction
+#     latent = model.module.optimal_z[0, :].view(1, -1)
+#     idx = np.random.choice(args.num_vote_test, 1, False)
+#     random_latent = model.module.contrib_mean[0, idx, :].view(1, -1)
+#     random_latent = (random_latent + latent) / 2
+#     pred_diverse = model.module.generate_pc_from_latent(random_latent)
 
-    ## save as the format that visualizer needs
-    #
-    #
-    #
+#     ## save as the format that visualizer needs (numpy file n*3)
+#     #
+#     #
+#     #
 
-def test_one_epoch(model, loader, num_class=40):
+## validation dataset
+def test_one_epoch(model, loader,criterion):
     mean_correct = []
-    class_acc = np.zeros((num_class,3))
     results = []
     for j, data in tqdm(enumerate(loader), total=len(loader)):  
         # target is the gt, points is the partial
@@ -103,11 +105,16 @@ def test_one_epoch(model, loader, num_class=40):
         points, target = points.cuda(), target.cuda()
         model.eval()
         pred = model(points)
-        results.append(chamfer_loss(pred, target.view(-1, args.num_pts, 3)))
-        results = torch.cat(results, dim=0).mean().item()
-        logger.add_scalar('test_chamfer_dist', results, epoch)
-        print('Epoch: {:03d}, Test Chamfer: {:.4f}'.format(epoch, results))
-        results = -results
+
+        #  use get_loss function here
+        # criterion(pred.view(args.bsize, -1, 3), points.view(-1, args.num_pts, 3)).mean()
+        results.append(criterion(pred, target.view(-1, args.num_pts, 3)))
+
+    results = torch.cat(results, dim=0).mean().item()
+    logger.add_scalar('test_chamfer_dist', results, epoch)
+    print('Epoch: {:03d}, Test Chamfer: {:.4f}'.format(epoch, results))
+    results = -results
+    
     return results
 
 
@@ -220,8 +227,9 @@ def main(args):
             model = model.train()
             pred = model(points)
             # compare the prediction and points(gt)
-            # TO DO : mean() ??? 
+            # mean() : get the mean of [bsize]
             loss = criterion(pred.view(args.bsize, -1, 3), points.view(-1, args.num_pts, 3)).mean()
+            # whether to use mean().item() ???
             log_string('Train Current Accuracy: %f' % loss)
 
             loss.backward()
@@ -229,7 +237,7 @@ def main(args):
             global_step += 1
         ################# TODO call test_one_epoch to get the acc for val dataset###########
         with torch.no_grad():
-            instance_acc, class_acc = test(classifier.eval(), testDataLoader)
+            acc = test_one_epoch(model.eval(), testDataLoader, criterion)
 
             if (instance_acc >= best_instance_acc):
                 best_instance_acc = instance_acc
