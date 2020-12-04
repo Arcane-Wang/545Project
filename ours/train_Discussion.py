@@ -3,7 +3,6 @@
 Author: Benny
 Date: Nov 2019
 """
-from data_utils.ModelNetDataLoader import ModelNetDataLoader
 import argparse
 import numpy as np
 import os
@@ -13,11 +12,10 @@ import logging
 from pathlib import Path
 from tqdm import tqdm
 import sys
-import provider
 import importlib
 import shutil
 from models import *
-
+from completion3D_dataset import Completion3DDataset
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = BASE_DIR
 sys.path.append(os.path.join(ROOT_DIR, 'models'))
@@ -30,7 +28,7 @@ def parse_args():  # Set up parameters to input
     # parser.add_argument('--model', default='pointnet_cls', help='model name [default: pointnet_cls]')
     # parser.add_argument('--epoch',  default=200, type=int, help='number of epoch in training [default: 200]')
     # parser.add_argument('--learning_rate', default=0.001, type=float, help='learning rate in training [default: 0.001]')
-    # parser.add_argument('--gpu', type=str, default='0', help='specify gpu device [default: 0]')
+    
     # parser.add_argument('--num_point', type=int, default=1024, help='Point Number [default: 1024]')
     # parser.add_argument('--optimizer', type=str, default='Adam', help='optimizer for training [default: Adam]')
     # parser.add_argument('--log_dir', type=str, default=None, help='experiment root')
@@ -39,6 +37,9 @@ def parse_args():  # Set up parameters to input
     # return parser.parse_args()
 
     parser = argparse.ArgumentParser('PointNet')
+    parser.add_argument('--gpu', type=str, default='0', help='specify gpu device [default: 0]')
+    parser.add_argument('--log_dir', type=str, default=None, help='experiment root')
+    
     parser.add_argument("--model_name", default='model',
                         help="model name")
     parser.add_argument("--dataset", type=str, choices=['shapenet', 'modelnet', 'completion3D', 'scanobjectnn'],
@@ -77,7 +78,7 @@ def parse_args():  # Set up parameters to input
                         help="the number of votes (sub point clouds) during test")
     parser.add_argument("--is_vote", action='store_true',
                         help="flag for computing latent feature by voting, otherwise max pooling")
-    parser.add_argument('--model', default='model', help='model name [default: pointnet_cls]')
+    parser.add_argument('--model', default='models', help='model name [default: pointnet_cls]')
     return parser.parse_args()
 
 # ## test dataset
@@ -158,20 +159,21 @@ def main(args):
 
     '''DATA LOADING'''
     log_string('Load dataset ...')
-    DATA_PATH = '' ############# TO BE Modified ###########
+    DATA_PATH = './data_root/shapenet' ############# TO BE Modified ###########
 
     TRAIN_DATASET = Completion3DDataset(root=DATA_PATH, class_choice=None, split='train')
-    trainDataLoader = torch.utils.data.DataLoader(TRAIN_DATASET, batch_size=args.bsize, shuffle=True, num_workers=8)
+    trainDataLoader = torch.utils.data.DataLoader(TRAIN_DATASET, batch_size=args.bsize, shuffle=True, num_workers=1)
+    # SERVER TRAINING: num_workers = 8
 
     TEST_DATASET = Completion3DDataset(root=DATA_PATH, class_choice=None, split='test')
-    trainDataLoader = torch.utils.data.DataLoader(TEST_DATASET, batch_size=args.bsize, shuffle=True, num_workers=8)
+    testDataLoader = torch.utils.data.DataLoader(TEST_DATASET, batch_size=args.bsize, shuffle=True, num_workers=1)
 
     '''MODEL LOADING'''
-    MODEL = importlib.import_module(args.model)
-    shutil.copy('./models/%s.py' % args.model, str(experiment_dir))  
-    shutil.copy('./models/pointnet_util.py', str(experiment_dir))
+    # MODEL = importlib.import_module(args.model)
+    shutil.copy('./%s.py' % args.model, str(experiment_dir))  
+    shutil.copy('./model_utils.py', str(experiment_dir))
 
-    model = MODEL.get_model(
+    model = get_model(
         radius=args.radius,
         bottleneck=args.bottleneck,
         num_pts=args.num_pts,
@@ -184,7 +186,7 @@ def main(args):
     model.to(device)
     if torch.cuda.device_count() > 1:
         print("Let's use", torch.cuda.device_count(), "GPUs!")
-    criterion = MODEL.get_loss().to(device)
+    criterion = get_loss().to(device)
 
     try:
         checkpoint = torch.load(str(experiment_dir) + '/checkpoints/best_model.pth')  
@@ -198,11 +200,9 @@ def main(args):
 
     
     optimizer = torch.optim.Adam(
-        classifier.parameters(),
-        lr=args.learning_rate,
-        betas=(0.9, 0.999),
-        eps=1e-08,
-        weight_decay=args.decay_rate
+        model.parameters(),
+        lr=args.lr,
+        betas=(0.9, 0.999)
     )
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=args.step_size, gamma=0.2)
 
@@ -214,38 +214,42 @@ def main(args):
 
     '''TRANING'''
     logger.info('Start training...')
-    for epoch in range(start_epoch,args.epoch):
-        log_string('Epoch %d (%d/%s):' % (global_epoch + 1, epoch + 1, args.epoch))
+    for epoch in range(start_epoch,args.max_epoch):
+        log_string('Epoch %d (%d/%s):' % (global_epoch + 1, epoch + 1, args.max_epoch))
 
         scheduler.step()
         for batch_id, data in tqdm(enumerate(trainDataLoader, 0), total=len(trainDataLoader), smoothing=0.9):
             points, target = data
             points = torch.Tensor(points)
-            points, target = points.cuda(), target.cuda()
+            print(points.shape)
+
+            points = points.cuda()
             optimizer.zero_grad()
 
             model = model.train()
             pred = model(points)
             # compare the prediction and points(gt)
             # mean() : get the mean of [bsize]
-            loss = criterion(pred.view(args.bsize, -1, 3), points.view(-1, args.num_pts, 3)).mean()
+            loss = criterion(pred, points.view(-1, args.num_pts, 3)).mean()
             # whether to use mean().item() ???
             log_string('Train Current Accuracy: %f' % loss)
 
             loss.backward()
             optimizer.step()
             global_step += 1
-        ################# TODO call test_one_epoch to get the acc for val dataset###########
-        with torch.no_grad():
-            acc = test_one_epoch(model.eval(), testDataLoader, criterion)
 
-            log_string('Test Accuracy: %f'% (acc))
-            log_string('Best Accuracy: %f'% (best_acc))
+        ################# call test_one_epoch to get the acc for val dataset ###########
+        # with torch.no_grad():
+        #     acc = test_one_epoch(model.eval(), testDataLoader, criterion)
 
-            if acc > best_acc:
-                # save model
-                torch.save(model.state_dict(), os.path.join(check_dir, 'model.pth'))
-                best_acc = acc
+        #     log_string('Test Accuracy: %f'% (acc))
+        #     log_string('Best Accuracy: %f'% (best_acc))
+
+        #     if acc > best_acc:
+        #         # save model
+        #         torch.save(model.state_dict(), os.path.join(check_dir, 'model.pth'))
+        #         best_acc = acc
+        
             # if (instance_acc >= best_instance_acc):
             #     logger.info('Save model...')
             #     savepath = str(checkpoints_dir) + '/best_model.pth'

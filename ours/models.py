@@ -2,7 +2,8 @@ import torch
 import numpy as np
 import sys
 import torch.nn.functional as F
-from .model_utils import *
+from model_utils import *
+from pointnet_utlis import *
 
 class get_model(torch.nn.Module):
     """
@@ -21,19 +22,21 @@ class get_model(torch.nn.Module):
 		num_pts,num_pts_observed,
         num_vote_train, num_contrib_vote_train,
         num_vote_test):
-        super(Module,self).__init__()
+        super(get_model,self).__init__()
         self.num_vote_train = num_vote_train
         self.num_contrib_vote_train = num_contrib_vote_train
         self.num_vote_test = num_vote_test
         self.bottleneck = bottleneck
 
-	self.encoder = Encoder(radius, bottleneck, self.num_vote_train, self.num_vote_test)
-	self.latent_module = LatentModule(is_vote = True)
-	self.decoder = FoldingBasedDecoder(bottleneck)
+        self.encoder = Encoder(radius, bottleneck, self.num_vote_train, self.num_vote_test)
+        self.latent_module = LatentModule(is_vote = True)
+        self.decoder = FoldingBasedDecoder(bottleneck)
 
     def forward(self, x=None, pos=None):
+        print("x in get_model forward")
+        print(x.shape)
         # extract feature for each sub point clouds
-        mean, std = self.encoder(x, pos, batch)
+        mean, std = self.encoder(x, pos)
 
         # select contribution features
         if self.training: # Boolean inherited from nn.Module representing whether this module is in training or evaluation mode
@@ -52,48 +55,6 @@ class get_model(torch.nn.Module):
         # generate prediction
         pred = self.decoder(optimal_z)
         return pred
-
-class Encoder(torch.nn.Module):
-    def __init__(self, radius, bottleneck, ncentroid_train, ncentroid_test):
-        super(Encoder, self).__init__()
-        self.npoint = None
-        if self.training:
-            self.npoint = ncentroid_train
-        else:
-            self.npoint = ncentroid_test
-
-        self.nsample = 128
-        self.in_channel = 3
-        # 3 -> 64
-        # self.sa_3_64 = PointNetSetAbstraction(self.npoint, radius, 
-        #                                         self.nsample, self.in_channel,
-        #                                         mlp = [64], group_all = False)
-        # 64+3 -> 64 -> 128 -> 512
-
-        # 3 -> 64 -> 128 -> 512
-        self.sa_module = PointNetSetAbstraction(self.npoint, radius, 
-                                                self.nsample, self.in_channel,
-                                                mlp = [64, 128, 512], group_all = False)
-        self.mlp = customized_mlp([512+3, 512, bottleneck*2], last=True, leaky=True)
-    
-    def forward(self, x, points):
-        # points could be None
-
-        # new_points: [B, 512, npoint]
-        # new_xyz: [B, 3, npoint],coordinate of the centroids
-        new_xyz, new_points = self.sa_module(x, points)
-        new_xyz = new_xyz.permute(0, 2, 1)
-        new_points = new_points.permute(0, 2, 1)
-        # new_points: [B, npoint, 512]
-        # new_xyz: [B, npoint, 3]
-
-        # after cat: [B, npoint, 512+3]
-        x = self.mlp(torch.cat([new_points,new_xyz], dim=-1))
-        mean, logvar = torch.chunk(x, 2, dim=-1)
-        logvar = torch.clamp(logvar, min=-100, max=100)
-        # std must be positive
-        std = torch.exp(0.5*logvar)
-        return mean, std
 
     def feature_selection(
             self,
@@ -136,6 +97,58 @@ class Encoder(torch.nn.Module):
         # mapping = dict(zip(source_idx.numpy(), target_idx.numpy()))
 
         return new_mean, new_std
+
+class Encoder(torch.nn.Module):
+    def __init__(self, radius, bottleneck, ncentroid_train, ncentroid_test):
+        super(Encoder, self).__init__()
+        self.npoint = None
+        if self.training:
+            self.npoint = ncentroid_train
+        else:
+            self.npoint = ncentroid_test
+
+        self.nsample = 128
+        self.in_channel = 3
+        # 3 -> 64
+        # self.sa_3_64 = PointNetSetAbstraction(self.npoint, radius, 
+        #                                         self.nsample, self.in_channel,
+        #                                         mlp = [64], group_all = False)
+        # 64+3 -> 64 -> 128 -> 512
+
+        # 3 -> 64 -> 128 -> 512
+        self.sa_module = PointNetSetAbstraction(self.npoint, radius, 
+                                                self.nsample, self.in_channel,
+                                                mlp = [64, 128, 512], group_all = False)
+        self.mlp = customized_mlp([512+3, 512, bottleneck*2], last=True, leaky=True)
+    
+    def forward(self, x, points):
+        # points could be None
+        B = x.shape[0]
+        # new_points: [B, 512, npoint]
+        # new_xyz: [B, 3, npoint],coordinate of the centroids
+
+        print("x in encoder forward")
+        print(x.shape)
+
+        new_xyz, new_points = self.sa_module(x, points)
+        new_xyz = new_xyz.permute(0, 2, 1)
+        new_points = new_points.permute(0, 2, 1)
+        # new_points: [B, npoint, 512]
+        # new_xyz: [B, npoint, 3]
+
+        # after cat: [B, npoint, 512+3]
+        print(new_points.shape) # [2, 64, 512]
+        print(new_xyz.shape) # [2, 64, 3]
+        tmp = torch.cat([new_points,new_xyz], dim=-1)
+        print("tmp.shape")
+        print(tmp.shape) # [2, 64, 515]
+
+        x = self.mlp(tmp.view(-1,515))
+        mean, logvar = torch.chunk(x, 2, dim=-1)
+        logvar = torch.clamp(logvar, min=-100, max=100)
+        # std must be positive
+        std = torch.exp(0.5*logvar)
+        return mean, std
 
 class LatentModule(torch.nn.Module):
     def __init__(self, is_vote):
@@ -231,6 +244,22 @@ class FoldingNetDecFold2(torch.nn.Module):
         # x = self.conv3(x)
         return x
 
+def GridSamplingLayer(batch_size, meshgrid):
+    """
+    output Grid points as a NxD matrix
+    params = {
+    'batch_size': 8
+    'meshgrid': [[-0.3,0.3,45],[-0.3,0.3,45]]
+    }
+    """
+    ret = np.meshgrid(*[np.linspace(it[0], it[1], num=it[2]) for it in meshgrid])
+    ndim = len(meshgrid)
+    grid = np.zeros((np.prod([it[2] for it in meshgrid]), ndim), dtype=np.float32)  # MxD
+    for d in range(ndim):
+        grid[:, d] = np.reshape(ret[d], -1)
+    g = np.repeat(grid[np.newaxis, ...], repeats=batch_size, axis=0)
+    return g
+    
 class get_loss(torch.nn.Module):
     def __init__(self):
         super(get_loss, self).__init__()

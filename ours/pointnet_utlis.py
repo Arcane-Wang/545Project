@@ -38,6 +38,11 @@ def farthest_point_sample(xyz, npoint):
     """
     device = xyz.device
     B, N, C = xyz.shape
+
+    # print("xyz shape in fps")
+    # print(xyz.shape) # [2,2048,3]
+    # print(npoint) # 64
+
     # for every batch, we will generate npoint numbers of centroids
     centroids = torch.zeros(B, npoint, dtype=torch.long).to(device)
     # there are B*N numbers of points in total
@@ -191,7 +196,9 @@ class PointNetSetAbstraction(nn.Module):
 
             S(npoint): number of centroids for every batch
         """
-        xyz = xyz.permute(0, 2, 1)
+        print("xyz shape")
+        print(xyz.shape)
+
         if points is not None:
             points = points.permute(0, 2, 1)
 
