@@ -97,22 +97,33 @@ def parse_args():  # Set up parameters to input
 #     #
 
 ## validation dataset
-def test_one_epoch(model, loader,criterion):
+def test_one_epoch(model, loader,criterion, epoch):
     mean_correct = []
     results = []
-    for j, data in tqdm(enumerate(loader), total=len(loader)):  
+    # for j, data in tqdm(enumerate(trainDataLoader, 0), total=len(trainDataLoader), smoothing=0.9):
+    for j, data in tqdm(enumerate(loader, 0), total=len(loader), smoothing=0.9):  
         # target is the gt, points is the partial
-        points, target = data
+        _, points, target = data
+        points = torch.Tensor(points)
+        # print(points.shape)
+        target = torch.Tensor(target)
+        # print("target")
+        # print(target.shape)
         points, target = points.cuda(), target.cuda()
-        model.eval()
+        # print("input")
+        # print(points.shape)
         pred = model(points)
 
         #  use get_loss function here
         # criterion(pred.view(args.bsize, -1, 3), points.view(-1, args.num_pts, 3)).mean()
+        # loss = criterion(pred, points.view(-1, args.num_pts, 3)).mean()
+        # print("pred")
+        # print(pred.shape)
+        # print(target.shape)
         results.append(criterion(pred, target.view(-1, args.num_pts, 3)))
 
     results = torch.cat(results, dim=0).mean().item()
-    logger.add_scalar('test_chamfer_dist', results, epoch)
+    # logger.add_scalar('test_chamfer_dist', results, epoch)
     print('Epoch: {:03d}, Test Chamfer: {:.4f}'.format(epoch, results))
     results = -results
 
@@ -165,7 +176,7 @@ def main(args):
     trainDataLoader = torch.utils.data.DataLoader(TRAIN_DATASET, batch_size=args.bsize, shuffle=True, num_workers=1)
     # SERVER TRAINING: num_workers = 8
 
-    TEST_DATASET = Completion3DDataset(root=DATA_PATH, class_choice=None, split='test')
+    TEST_DATASET = Completion3DDataset(root=DATA_PATH, class_choice=None, split='val')
     testDataLoader = torch.utils.data.DataLoader(TEST_DATASET, batch_size=args.bsize, shuffle=True, num_workers=1)
 
     '''MODEL LOADING'''
@@ -209,7 +220,7 @@ def main(args):
     global_epoch = 0
     global_step = 0
     best_instance_acc = 0.0
-    best_class_acc = 0.0
+    best_acc = -100
     mean_correct = []
 
     '''TRANING'''
@@ -221,13 +232,15 @@ def main(args):
         for batch_id, data in tqdm(enumerate(trainDataLoader, 0), total=len(trainDataLoader), smoothing=0.9):
             points, target = data
             points = torch.Tensor(points)
-            print(points.shape)
+            # print(points.shape)
 
             points = points.cuda()
             optimizer.zero_grad()
 
             model = model.train()
             pred = model(points)
+            # print("pred shape train")
+            # print(pred.shape)
             # compare the prediction and points(gt)
             # mean() : get the mean of [bsize]
             loss = criterion(pred, points.view(-1, args.num_pts, 3)).mean()
@@ -239,17 +252,18 @@ def main(args):
             global_step += 1
 
         ################# call test_one_epoch to get the acc for val dataset ###########
-        # with torch.no_grad():
-        #     acc = test_one_epoch(model.eval(), testDataLoader, criterion)
+        with torch.no_grad():
+            acc = test_one_epoch(model.eval(), testDataLoader, criterion, epoch)
 
-        #     log_string('Test Accuracy: %f'% (acc))
-        #     log_string('Best Accuracy: %f'% (best_acc))
+            log_string('Test Accuracy: %f'% (acc))
+            log_string('Best Accuracy: %f'% (best_acc))
 
-        #     if acc > best_acc:
-        #         # save model
-        #         torch.save(model.state_dict(), os.path.join(check_dir, 'model.pth'))
-        #         best_acc = acc
-        
+            if acc > best_acc:
+                # save model
+                #### set the path to save model there ###
+                torch.save(model.state_dict(), os.path.join(checkpoints_dir, 'model.pth'))
+                best_acc = acc
+
             # if (instance_acc >= best_instance_acc):
             #     logger.info('Save model...')
             #     savepath = str(checkpoints_dir) + '/best_model.pth'

@@ -171,9 +171,11 @@ def sample_and_group(npoint, radius, nsample, xyz, points, returnfps=False):
         return new_xyz, new_points
 
 class PointNetSetAbstraction(nn.Module):
-    def __init__(self, npoint, radius, nsample, in_channel, mlp, group_all):
+    def __init__(self, ncentroid_train, ncentroid_test, radius, nsample, in_channel, mlp, group_all):
         super(PointNetSetAbstraction, self).__init__()
-        self.npoint = npoint
+        self.npoint = None
+        self.ncentroid_train = ncentroid_train
+        self.ncentroid_test = ncentroid_test
         self.radius = radius
         self.nsample = nsample
         self.mlp_convs = nn.ModuleList()
@@ -185,7 +187,7 @@ class PointNetSetAbstraction(nn.Module):
             last_channel = out_channel
         self.group_all = group_all
 
-    def forward(self, xyz, points):
+    def forward(self, xyz, points, training_flag):
         """
         Input:
             xyz: input points position data, [B, C, N]
@@ -196,9 +198,14 @@ class PointNetSetAbstraction(nn.Module):
 
             S(npoint): number of centroids for every batch
         """
-        print("xyz shape")
-        print(xyz.shape)
+        # print("xyz shape")
+        # print(xyz.shape)
 
+        if training_flag:
+            self.npoint = self.ncentroid_train
+        else:
+            self.npoint = self.ncentroid_test
+            
         if points is not None:
             points = points.permute(0, 2, 1)
 

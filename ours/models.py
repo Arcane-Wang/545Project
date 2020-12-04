@@ -33,11 +33,14 @@ class get_model(torch.nn.Module):
         self.decoder = FoldingBasedDecoder(bottleneck)
 
     def forward(self, x=None, pos=None):
-        print("x in get_model forward")
-        print(x.shape)
+        # print("x in get_model forward")
+        # print(x.shape)
         # extract feature for each sub point clouds
         mean, std = self.encoder(x, pos)
 
+        # print("after encoder")
+        # print(mean.shape)
+        # print(std.shape)
         # select contribution features
         if self.training: # Boolean inherited from nn.Module representing whether this module is in training or evaluation mode
             contrib_mean, contrib_std = \
@@ -46,6 +49,10 @@ class get_model(torch.nn.Module):
             contrib_mean, contrib_std = \
                 self.feature_selection(mean, std, self.num_vote_test)
 
+        # print("after feature_selection")
+        # print(contrib_mean.shape)
+        # print(contrib_std.shape)
+
         # compute optimal latent feature
         optimal_z = self.latent_module(contrib_mean, contrib_std)
 
@@ -53,6 +60,8 @@ class get_model(torch.nn.Module):
         self.optimal_z = optimal_z
 
         # generate prediction
+        # print("opt_z")
+        # print(optimal_z.shape)
         pred = self.decoder(optimal_z)
         return pred
 
@@ -102,10 +111,14 @@ class Encoder(torch.nn.Module):
     def __init__(self, radius, bottleneck, ncentroid_train, ncentroid_test):
         super(Encoder, self).__init__()
         self.npoint = None
-        if self.training:
-            self.npoint = ncentroid_train
-        else:
-            self.npoint = ncentroid_test
+        # can not do this judgement in init
+        # training is always before testing
+        # -> self.npoint = ncentroid_train
+        # if self.training:
+        #     self.npoint = ncentroid_train
+        # else:
+        #     self.npoint = ncentroid_test
+        #     print(self.npoint)
 
         self.nsample = 128
         self.in_channel = 3
@@ -116,7 +129,7 @@ class Encoder(torch.nn.Module):
         # 64+3 -> 64 -> 128 -> 512
 
         # 3 -> 64 -> 128 -> 512
-        self.sa_module = PointNetSetAbstraction(self.npoint, radius, 
+        self.sa_module = PointNetSetAbstraction(ncentroid_train, ncentroid_test, radius, 
                                                 self.nsample, self.in_channel,
                                                 mlp = [64, 128, 512], group_all = False)
         self.mlp = customized_mlp([512+3, 512, bottleneck*2], last=True, leaky=True)
@@ -127,21 +140,21 @@ class Encoder(torch.nn.Module):
         # new_points: [B, 512, npoint]
         # new_xyz: [B, 3, npoint],coordinate of the centroids
 
-        print("x in encoder forward")
-        print(x.shape)
+        # print("x in encoder forward")
+        # print(x.shape)
 
-        new_xyz, new_points = self.sa_module(x, points)
+        new_xyz, new_points = self.sa_module(x, points, self.training)
         new_xyz = new_xyz.permute(0, 2, 1)
         new_points = new_points.permute(0, 2, 1)
         # new_points: [B, npoint, 512]
         # new_xyz: [B, npoint, 3]
 
         # after cat: [B, npoint, 512+3]
-        print(new_points.shape) # [2, 64, 512]
-        print(new_xyz.shape) # [2, 64, 3]
+        # print(new_points.shape) # [2, 64, 512]
+        # print(new_xyz.shape) # [2, 64, 3]
         tmp = torch.cat([new_points,new_xyz], dim=-1)
-        print("tmp.shape")
-        print(tmp.shape) # [2, 64, 515]
+        # print("tmp.shape")
+        # print(tmp.shape) # [2, 64, 515]
 
         x = self.mlp(tmp.view(-1,515))
         mean, logvar = torch.chunk(x, 2, dim=-1)
@@ -259,7 +272,7 @@ def GridSamplingLayer(batch_size, meshgrid):
         grid[:, d] = np.reshape(ret[d], -1)
     g = np.repeat(grid[np.newaxis, ...], repeats=batch_size, axis=0)
     return g
-    
+
 class get_loss(torch.nn.Module):
     def __init__(self):
         super(get_loss, self).__init__()
