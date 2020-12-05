@@ -170,7 +170,7 @@ def main(args):
 
     '''DATA LOADING'''
     log_string('Load dataset ...')
-    DATA_PATH = './data_root/shapenet' ############# TO BE Modified ###########
+    DATA_PATH = './data_root/shapenet'
 
     TRAIN_DATASET = Completion3DDataset(root=DATA_PATH, class_choice=None, split='train')
     trainDataLoader = torch.utils.data.DataLoader(TRAIN_DATASET, batch_size=args.bsize, shuffle=True, num_workers=1)
