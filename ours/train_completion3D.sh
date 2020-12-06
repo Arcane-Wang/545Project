@@ -15,7 +15,7 @@ docker run -it --rm \
   --num_pts_observed 2048 \
   --lr 0.0002 \
   --step_size 200 \
-  --max_epoch 50 \
+  --max_epoch 500 \
   --bsize 32 \
   --radius 0.10 \
   --bottleneck 1024 \
