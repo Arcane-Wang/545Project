@@ -11,8 +11,6 @@ import importlib
 import shutil
 from models import *
 from completion3D_dataset import Completion3DDataset
-from torch.utils.tensorboard import SummaryWriter
-
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = BASE_DIR
 sys.path.append(os.path.join(ROOT_DIR, 'models'))
@@ -20,20 +18,9 @@ sys.path.append(os.path.join(ROOT_DIR, 'models'))
 
 def parse_args():  # Set up parameters to input
     '''PARAMETERS'''
-    # parser = argparse.ArgumentParser('PointNet')
-    # parser.add_argument('--batch_size', type=int, default=24, help='batch size in training [default: 24]')
-    # parser.add_argument('--model', default='pointnet_cls', help='model name [default: pointnet_cls]')
-    # parser.add_argument('--epoch',  default=200, type=int, help='number of epoch in training [default: 200]')
-    # parser.add_argument('--learning_rate', default=0.001, type=float, help='learning rate in training [default: 0.001]')
-    
-    # parser.add_argument('--num_point', type=int, default=1024, help='Point Number [default: 1024]')
-    # parser.add_argument('--optimizer', type=str, default='Adam', help='optimizer for training [default: Adam]')
-    # parser.add_argument('--log_dir', type=str, default=None, help='experiment root')
-    # parser.add_argument('--decay_rate', type=float, default=1e-4, help='decay rate [default: 1e-4]')
-    # parser.add_argument('--normal', action='store_true', default=False, help='Whether to use normal information [default: False]')
-    # return parser.parse_args()
-
     parser = argparse.ArgumentParser('PointNet')
+    parser.add_argument("--eval", action='store_true',
+                        help="flag for doing evaluation")
     parser.add_argument('--gpu', type=str, default='0', help='specify gpu device [default: 0]')
     parser.add_argument('--log_dir', type=str, default=None, help='experiment root')
     
@@ -78,53 +65,45 @@ def parse_args():  # Set up parameters to input
     parser.add_argument('--model', default='models', help='model name [default: pointnet_cls]')
     return parser.parse_args()
 
-# ## test dataset
-# def evaluation():
-
-#     # sampling in the latent space to generate diverse prediction
-#     latent = model.module.optimal_z[0, :].view(1, -1)
-#     idx = np.random.choice(args.num_vote_test, 1, False)
-#     random_latent = model.module.contrib_mean[0, idx, :].view(1, -1)
-#     random_latent = (random_latent + latent) / 2
-#     pred_diverse = model.module.generate_pc_from_latent(random_latent)
-
-#     ## save as the format that visualizer needs (numpy file n*3)
-#     #
-#     #
-#     #
-
-## validation dataset
-def test_one_epoch(model, loader,criterion, epoch, logger):
+## test on validation dataset and prepare for visualization
+def eval_valDataset(args, model, loader,save_dir):
     mean_correct = []
     results = []
-    # for j, data in tqdm(enumerate(trainDataLoader, 0), total=len(trainDataLoader), smoothing=0.9):
+    print(len(loader))
     for j, data in tqdm(enumerate(loader, 0), total=len(loader), smoothing=0.9):  
         # target is the gt, points is the partial
-        _, points, target = data
-        points = torch.Tensor(points)
+        label, pos_observed, target = data
+        pos_observed = torch.Tensor(pos_observed)
         # print(points.shape)
         target = torch.Tensor(target)
         # print("target")
         # print(target.shape)
-        points, target = points.cuda(), target.cuda()
+        pos_observed, target = pos_observed.cuda(), target.cuda()
         # print("input")
         # print(points.shape)
-        pred = model(points)
+        pred = model(pos_observed)
 
+        # pos_observed is the first partial point cloud in this batch
+        pos_observed = pos_observed.cpu().detach().numpy().reshape(-1, args.num_pts_observed, 3)[0]
+        pred = pred.cpu().detach().numpy()[0]
+        np.save(os.path.join(save_dir, 'pos_observed_' + str(label) + str(j)), pos_observed)
+        np.save(os.path.join(save_dir, 'pred_' + str(label) + str(j)), pred)
+        # if j == 10:
+        #     break
         #  use get_loss function here
         # criterion(pred.view(args.bsize, -1, 3), points.view(-1, args.num_pts, 3)).mean()
         # loss = criterion(pred, points.view(-1, args.num_pts, 3)).mean()
         # print("pred")
         # print(pred.shape)
         # print(target.shape)
-        results.append(criterion(pred, target.view(-1, args.num_pts, 3)))
+        # results.append(criterion(pred, target.view(-1, args.num_pts, 3)))
 
-    results = torch.cat(results, dim=0).mean().item()
-    
-    print('Epoch: {:03d}, Test Chamfer: {:.4f}'.format(epoch, results))
+    # results = torch.cat(results, dim=0).mean().item()
+    # logger.add_scalar('test_chamfer_dist', results, epoch)
+    # print('Epoch: {:03d}, Test Chamfer: {:.4f}'.format(epoch, results))
+
     # results = -results
 
-    return results
 
 
 def main(args):
@@ -165,18 +144,16 @@ def main(args):
     log_string('PARAMETER ...')
     log_string(args)
 
-    tb_record = SummaryWriter(log_dir=log_dir)
     '''DATA LOADING'''
     log_string('Load dataset ...')
     DATA_PATH = './data_root/shapenet'
 
-    TRAIN_DATASET = Completion3DDataset(root=DATA_PATH, class_choice=None, split='train')
-    trainDataLoader = torch.utils.data.DataLoader(TRAIN_DATASET, batch_size=args.bsize, shuffle=True, num_workers=1)
     # SERVER TRAINING: num_workers = 8
 
     TEST_DATASET = Completion3DDataset(root=DATA_PATH, class_choice=None, split='val')
-    testDataLoader = torch.utils.data.DataLoader(TEST_DATASET, batch_size=args.bsize, shuffle=True, num_workers=1)
-
+    testDataLoader = torch.utils.data.DataLoader(TEST_DATASET, batch_size=1, shuffle=False, num_workers=1)
+    print("data len")
+    print(len(testDataLoader))
     '''MODEL LOADING'''
     # MODEL = importlib.import_module(args.model)
     shutil.copy('./%s.py' % args.model, str(experiment_dir))  
@@ -196,18 +173,16 @@ def main(args):
     if torch.cuda.device_count() > 1:
         print("Let's use", torch.cuda.device_count(), "GPUs!")
     criterion = get_loss().to(device)
+    # model = torch.nn.DataParallel(model) # ???
+    # checkpoint = torch.load(str(experiment_dir) + '/checkpoints/best_model.pth') 
+    checkpoint = torch.load('./log/classification/2020-12-06_03-14/checkpoints/best_model.pth')
+    # checkpoint = torch.load(str(experiment_dir) + '/checkpoints/best_model.pth')
+    model.load_state_dict(checkpoint['model_state_dict'])
+    # if not os.path.isfile(checkpoint):
+    #     raise ValueError('{} does not exist. Please provide a valid path for pretrained model!'.format(checkpoint))
+    # model.load_state_dict(torch.load(checkpoint))
+    log_string('Use pretrain model')
 
-    try:
-        checkpoint = torch.load(str(experiment_dir) + '/checkpoints/best_model.pth')  
-        start_epoch = checkpoint['epoch']
-        model.load_state_dict(checkpoint['model_state_dict'])
-        log_string('Use pretrain model')
-    except:
-        log_string('No existing model, starting training from scratch...')
-        start_epoch = 0
-
-
-    
     optimizer = torch.optim.Adam(
         model.parameters(),
         lr=args.lr,
@@ -218,78 +193,16 @@ def main(args):
     global_epoch = 0
     global_step = 0
     best_instance_acc = 0.0
-    best_acc = 100
+    best_acc = -100
     mean_correct = []
 
-    writer = SummaryWriter()
+    '''TESTING'''
+    logger.info('Start testing...')
+    save_dir = './vis_res'
+    with torch.no_grad():
+        eval_valDataset(args,model.eval(), testDataLoader, save_dir)
 
-    '''TRANING'''
-    logger.info('Start training...')
-    for epoch in range(start_epoch,args.max_epoch):
-        log_string('Epoch %d (%d/%s):' % (global_epoch + 1, epoch + 1, args.max_epoch))
-
-        scheduler.step()
-        for batch_id, data in enumerate(trainDataLoader, 0):
-            points, _ = data
-            points = torch.Tensor(points)
-            # print(points.shape)
-
-            points = points.cuda()
-            optimizer.zero_grad()
-
-            model = model.train()
-            pred = model(points)
-            # print("pred shape train")
-            # print(pred.shape)
-            # compare the prediction and points(gt)
-            # mean() : get the mean of [bsize]
-            loss = criterion(pred, points.view(-1, args.num_pts, 3)).mean()
-            # whether to use mean().item() ???
-            log_string('Train Current Accuracy: %f' % loss)
-            writer.add_scalar('chamfer distance/train', loss, epoch)
-
-            loss.backward()
-            optimizer.step()
-            global_step += 1
-
-        ################# call test_one_epoch to get the acc for val dataset ###########
-        with torch.no_grad():
-            acc = test_one_epoch(model.eval(), testDataLoader, criterion, epoch, logger)
-            writer.add_scalar('chamfer distance/test', acc, epoch)
-            log_string('Test chamfer dist: %f'% (acc))
-            log_string('Best chamfer dist: %f'% (best_acc))
-
-            if acc < best_acc:
-                # save model
-                #### set the path to save model there ###
-                logger.info('Save model...')
-                savepath = str(checkpoints_dir) + '/best_model.pth'
-                log_string('Saving at %s'% savepath)
-                state = {
-                    'epoch': epoch,
-                    'best_acc': best_acc,
-                    'model_state_dict': model.state_dict(),
-                }
-                torch.save(state, savepath)
-                best_acc = acc
-                log_string("################################################################")
-            # if (instance_acc >= best_instance_acc):
-            #     logger.info('Save model...')
-            #     savepath = str(checkpoints_dir) + '/best_model.pth'
-            #     log_string('Saving at %s'% savepath)
-            #     state = {
-            #         'epoch': best_epoch,
-            #         'instance_acc': instance_acc,
-            #         'class_acc': class_acc,
-            #         'model_state_dict': classifier.state_dict(),
-            #         'optimizer_state_dict': optimizer.state_dict(),
-            #     }
-            #     torch.save(state, savepath)
-
-            global_epoch += 1
-
-    logger.info('End of training...')
-    writer.close()
+    logger.info('End of testing...')
 
 if __name__ == '__main__':
     args = parse_args()

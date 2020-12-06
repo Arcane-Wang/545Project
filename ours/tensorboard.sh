@@ -4,4 +4,4 @@ docker run -it --rm \
   -v $PWD/logs:/logs:ro \
   -p 6006:6006 \
   completion-pc \
-  tensorboard --logdir=/logs --port=6006 --bind_all
+  tensorboard --logdir=runs --port=6006 --bind_all

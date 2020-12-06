@@ -6,7 +6,7 @@ docker run -it --rm \
   -v $(pwd)/../data_root:/cpc/data_root \
   -w /cpc/training \
   completion-pc \
-  python ./train_Discussion.py \
+  python ./eval_completion.py \
   --model_name cpc3d_b64e500s200lr2e-4_r010tr64-10_te32_bn1024_01 \
   --dataset completion3D \
   --categories plane,cabinet,car,chair,lamp,couch,table,watercraft \
@@ -16,7 +16,7 @@ docker run -it --rm \
   --lr 0.0002 \
   --step_size 200 \
   --max_epoch 50 \
-  --bsize 32 \
+  --bsize 1 \
   --radius 0.10 \
   --bottleneck 1024 \
   --num_vote_train 64 \
