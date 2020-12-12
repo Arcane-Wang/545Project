@@ -8,7 +8,7 @@ import random
 
 warnings.filterwarnings('ignore')
 
-class Completion3DDataset(Dataset):
+class EPN3DDataset(Dataset):
     
     def __init__(self, root, class_choice=None, split='train'):
         self.root = root
