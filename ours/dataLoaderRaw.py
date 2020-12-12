@@ -19,7 +19,7 @@ warnings.filterwarnings('ignore')
 
 
 import torch
-class completion3D_class(Dataset):
+class EPN3D__class(Dataset):
     
     def __init__(self, root, class_choice=None, split='train'):
         self.root = root
@@ -147,7 +147,7 @@ class completion3D_class(Dataset):
 # In[49]:
 
 
-res = completion3D_class("C:/Users/Minzhe/Desktop/EECS545/FinalProject/shapenet")
+res = EPN3D__class("C:/Users/Minzhe/Desktop/EECS545/FinalProject/shapenet")
 
 
 # In[50]:

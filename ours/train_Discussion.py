@@ -10,7 +10,7 @@ import sys
 import importlib
 import shutil
 from models import *
-from completion3D_dataset import Completion3DDataset
+from EPN3D_dataset import EPN3DDataset
 from torch.utils.tensorboard import SummaryWriter
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -39,12 +39,12 @@ def parse_args():  # Set up parameters to input
     
     parser.add_argument("--model_name", default='model',
                         help="model name")
-    parser.add_argument("--dataset", type=str, choices=['shapenet', 'modelnet', 'completion3D', 'scanobjectnn'],
-                        help="shapenet or modelnet or completion3D")
+    parser.add_argument("--dataset", type=str, choices=['shapenet', 'modelnet', 'EPN3D', 'scanobjectnn'],
+                        help="shapenet or modelnet or EPN3D")
     parser.add_argument("--categories", default='Chair',
                         help="point clouds categories, string or [string]. For ShapeNet: Airplane, Bag, \
                         Cap, Car, Chair, Earphone, Guitar, Knife, Lamp, Laptop, Motorbike, Mug, Pistol, \
-                        Rocket, Skateboard, Table; For Completion3D: plane;cabinet;car;chair;lamp;couch;table;watercraft")
+                        Rocket, Skateboard, Table; For EPN3D: plane;cabinet;car;chair;lamp;couch;table;watercraft")
     parser.add_argument("--task", type=str, choices=['completion', 'classification', 'segmentation'],
                         help=' '.join([
                             'completion: point clouds completion',
@@ -153,7 +153,7 @@ def main(args):
 
     '''LOG'''
     args = parse_args()
-    assert args.dataset in ['completion3D']
+    assert args.dataset in ['EPN3D']
     assert args.task in ['completion']
     logger = logging.getLogger("Model")
     logger.setLevel(logging.INFO)
@@ -170,11 +170,11 @@ def main(args):
     log_string('Load dataset ...')
     DATA_PATH = './data_root/shapenet'
 
-    TRAIN_DATASET = Completion3DDataset(root=DATA_PATH, class_choice=None, split='train')
+    TRAIN_DATASET = EPN3DDataset(root=DATA_PATH, class_choice=None, split='train')
     trainDataLoader = torch.utils.data.DataLoader(TRAIN_DATASET, batch_size=args.bsize, shuffle=True, num_workers=1)
     # SERVER TRAINING: num_workers = 8
 
-    TEST_DATASET = Completion3DDataset(root=DATA_PATH, class_choice=None, split='val')
+    TEST_DATASET = EPN3DDataset(root=DATA_PATH, class_choice=None, split='val')
     testDataLoader = torch.utils.data.DataLoader(TEST_DATASET, batch_size=args.bsize, shuffle=True, num_workers=1)
 
     '''MODEL LOADING'''

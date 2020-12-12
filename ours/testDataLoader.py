@@ -1,5 +1,5 @@
 #coding=gbk
-from completion3D_dataset import Completion3DDataset
+from EPN3D_dataset import EPN3DDataset
 import argparse
 import numpy as np
 import os
@@ -17,7 +17,7 @@ def main():
     #log_string('Load dataset ...')
     DATA_PATH = '' # TO BE Modified
 
-    TRAIN_DATASET = Completion3DDataset(root=DATA_PATH, class_choice=None, split='train')
+    TRAIN_DATASET = EPN3DDataset(root=DATA_PATH, class_choice=None, split='train')
     trainDataLoader = torch.utils.data.DataLoader(TRAIN_DATASET, batch_size=1, shuffle=True, num_workers=1)
     '''
     for batch_id, data in enumerate(trainDataLoader,0):

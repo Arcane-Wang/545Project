@@ -8,7 +8,7 @@ docker run -it --rm \
   completion-pc \
   python ./eval_completion.py \
   --model_name cpc3d_b64e500s200lr2e-4_r010tr64-10_te32_bn1024_01 \
-  --dataset completion3D \
+  --dataset EPN3D \
   --categories plane,cabinet,car,chair,lamp,couch,table,watercraft \
   --task completion \
   --num_pts 2048 \

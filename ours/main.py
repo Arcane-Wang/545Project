@@ -10,7 +10,7 @@ sys.path.insert(1, os.path.join(sys.path[0], '..'))
 
 from utils.models import Model
 from utils.model_utils import augment_transforms, get_lr, chamfer_loss, simulate_partial_point_clouds
-from utils.class_completion3D import completion3D_class
+from utils.class_EPN3D import EPN3D_class
 from torch.optim.lr_scheduler import StepLR
 from torchvision import transforms
 from torch_geometric.datasets import ShapeNet, ModelNet
@@ -88,7 +88,7 @@ def test_one_epoch(args, loader, logger, epoch):
             pred = model(None, pos_observed, batch_observed, category)
 
         if args.task == 'completion':
-            if args.dataset == 'completion3D':
+            if args.dataset == 'EPN3D':
                 # use the label(complete point clouds) for testing
                 results.append(chamfer_loss(pred, label.view(-1, args.num_pts, 3)))
             else:
@@ -233,7 +233,7 @@ def evaluate(args, loader, save_dir):
                 # key_pos = key_pos.cpu().detach().numpy()[0]
                 # np.save(os.path.join(save_dir, 'key_pos_{}'.format(j)), key_pos)
     
-                if args.dataset == 'completion3D':
+                if args.dataset == 'EPN3D':
                     # use the label(complete point clouds) for testing
                     results.append(chamfer_loss(pred, label.view(-1, args.num_pts, 3)))
                     pos = label.cpu().detach().numpy().reshape(-1, args.num_pts, 3)[0]
@@ -321,14 +321,14 @@ def load_dataset(args):
         test_dataloader = DataLoader(test_dataset, batch_size=args.bsize, shuffle=True,
                                      num_workers=6, drop_last=True)
 
-    # load completion3D dataset
-    if args.dataset == 'completion3D':
+    # load EPN3D dataset
+    if args.dataset == 'EPN3D':
         pre_transform, transform = augment_transforms(args)
 
         categories = args.categories.split(',')
-        train_dataset = completion3D_class('../data_root/completion3D', categories, split='train',
+        train_dataset = EPN3D_class('../data_root/EPN3D', categories, split='train',
                             include_normals=False, pre_transform=pre_transform, transform=transform)
-        test_dataset = completion3D_class('../data_root/completion3D', categories, split='val',
+        test_dataset = EPN3D_class('../data_root/EPN3D', categories, split='val',
                             include_normals=False, pre_transform=pre_transform, transform=transform)
         train_dataloader = DataLoader(train_dataset, batch_size=args.bsize, shuffle=True,
                                       num_workers=8, drop_last=True)
@@ -380,8 +380,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_name", default='model',
                         help="model name")
-    parser.add_argument("--dataset", type=str, choices=['shapenet', 'modelnet', 'completion3D', 'scanobjectnn'],
-                        help="shapenet or modelnet or completion3D")
+    parser.add_argument("--dataset", type=str, choices=['shapenet', 'modelnet', 'EPN3D', 'scanobjectnn'],
+                        help="shapenet or modelnet or EPN3D")
     parser.add_argument("--task", type=str, choices=['completion', 'classification', 'segmentation'],
                         help=' '.join([
                             'completion: point clouds completion',
@@ -393,7 +393,7 @@ if __name__ == '__main__':
     parser.add_argument("--categories", default='Chair',
                         help="point clouds categories, string or [string]. For ShapeNet: Airplane, Bag, \
                         Cap, Car, Chair, Earphone, Guitar, Knife, Lamp, Laptop, Motorbike, Mug, Pistol, \
-                        Rocket, Skateboard, Table; For Completion3D: plane;cabinet;car;chair;lamp;couch;table;watercraft")
+                        Rocket, Skateboard, Table; For EPN3D: plane;cabinet;car;chair;lamp;couch;table;watercraft")
     parser.add_argument("--num_pts", type=int,
                         help="the number of input points")
     parser.add_argument("--num_pts_observed", type=int,
@@ -428,7 +428,7 @@ if __name__ == '__main__':
                         help="directory which contains pretrained model (.pth)")
 
     args = parser.parse_args()
-    assert args.dataset in ['shapenet', 'modelnet', 'completion3D']
+    assert args.dataset in ['shapenet', 'modelnet', 'EPN3D']
     assert args.task in ['completion', 'classification', 'segmentation']
 
     # construct data loader
